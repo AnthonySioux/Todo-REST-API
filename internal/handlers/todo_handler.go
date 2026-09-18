@@ -49,6 +49,8 @@ func CreateTodoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		// to the 201 below with todo == nil, appending "null" to the body.
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			// ✅ NEW CODE
+			return
 		}
 
 		c.JSON(http.StatusCreated, todo)
@@ -112,6 +114,8 @@ func GetToDoByIDHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			// BUG 5: any error that is not ErrNoRows sends a 500 here and then
 			// reaches the 200 below with todo == nil.
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			// ✅ NEW CODE
+			return
 		}
 
 		c.JSON(http.StatusOK, todo)
@@ -140,6 +144,8 @@ func UpdateToDoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		// database.
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid todo ID"})
+			// ✅ NEW CODE
+			return
 		}
 
 		var input UpdateTodoInput
@@ -209,6 +215,8 @@ func DeleteToDoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		// so the DELETE below executes against the database anyway.
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid todo ID"})
+			// ✅ NEW CODE
+			return
 		}
 
 		err = repository.DeleteToDo(pool, id, userID)
@@ -223,6 +231,8 @@ func DeleteToDoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			// message below, so the response reports a deletion that never
 			// happened.
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			// ✅ NEW CODE
+			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "Todo deleted successfully"})
