@@ -23,6 +23,8 @@ type UpdateTodoInput struct {
 	Completed *bool `json:"completed"`
 }
 
+// BUG: this handler writes a response on the repository error path and then
+// continues. c.JSON does not end the handler.
 func CreateTodoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userIDInterface, exists := c.Get("user_id")
@@ -43,8 +45,12 @@ func CreateTodoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		todo, err := repository.CreateTodo(pool, input.Title, input.Completed, userID)
 
+		// BUG 4: on an insert failure this sends a 500 and then falls through
+		// to the 201 below with todo == nil, appending "null" to the body.
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			// ✅ NEW CODE
+			return
 		}
 
 		c.JSON(http.StatusCreated, todo)
@@ -73,6 +79,8 @@ func GetAllTodosHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+// BUG: the catch-all error branch in this handler does not stop execution.
+// Compare it with the ErrNoRows branch directly above it, which does.
 func GetToDoByIDHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userIDInterface, exists := c.Get("user_id")
@@ -103,13 +111,19 @@ func GetToDoByIDHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 				return
 			}
 
+			// BUG 5: any error that is not ErrNoRows sends a 500 here and then
+			// reaches the 200 below with todo == nil.
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			// ✅ NEW CODE
+			return
 		}
 
 		c.JSON(http.StatusOK, todo)
 	}
 }
 
+// BUG: the ID validation branch here rejects the input and then keeps going.
+// The same branch in GetToDoByIDHandler stops correctly.
 func UpdateToDoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userIDInterface, exists := c.Get("user_id")
@@ -125,8 +139,13 @@ func UpdateToDoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		id, err := strconv.Atoi(idStr)
 
+		// BUG 3: a non-numeric ID sends a 400 and then continues with id == 0,
+		// so the body is still bound and a lookup still runs against the
+		// database.
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid todo ID"})
+			// ✅ NEW CODE
+			return
 		}
 
 		var input UpdateTodoInput
@@ -175,6 +194,8 @@ func UpdateToDoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+// BUG: two branches in this handler write a response without returning, so a
+// single request can produce three JSON objects and still run a DELETE query.
 func DeleteToDoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userIDInterface, exists := c.Get("user_id")
@@ -190,8 +211,12 @@ func DeleteToDoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		id, err := strconv.Atoi(idStr)
 
+		// BUG 1: a non-numeric ID sends a 400 and then continues with id == 0,
+		// so the DELETE below executes against the database anyway.
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid todo ID"})
+			// ✅ NEW CODE
+			return
 		}
 
 		err = repository.DeleteToDo(pool, id, userID)
@@ -202,7 +227,12 @@ func DeleteToDoHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 				return
 			}
 
+			// BUG 2: sends a second body and then falls through to the success
+			// message below, so the response reports a deletion that never
+			// happened.
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			// ✅ NEW CODE
+			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "Todo deleted successfully"})
